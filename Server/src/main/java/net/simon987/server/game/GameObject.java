@@ -56,7 +56,7 @@ public abstract class GameObject implements JSONSerialisable, MongoSerialisable 
         if (newX < 0 || newY < 0 || newX >= world.getWorldSize() || newY >= world.getWorldSize()) {
             //Next tile is out of world bounds, move to next world
             World nextWorld = GameServer.INSTANCE.getGameUniverse().getWorld(
-                    world.getX() + direction.dX, world.getY() + direction.dY, true);
+                    world.getX() + direction.dX, world.getY() + direction.dY, true, world.getDimension());
 
             //Move object to next World
             world.removeObject(this);
@@ -254,6 +254,13 @@ public abstract class GameObject implements JSONSerialisable, MongoSerialisable 
 
     /**
      * Called before this GameObject is removed from the world - defaults to doing nothing
+     * @return true if cancelled
      */
-    public void onDeadCallback() { }
+    public boolean onDeadCallback() {
+        return false;
+    }
+
+    public void initialize() {
+
+    }
 }

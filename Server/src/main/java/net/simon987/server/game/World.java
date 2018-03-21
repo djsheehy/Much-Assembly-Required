@@ -31,6 +31,8 @@ public class World implements MongoSerialisable {
 
     private TileMap tileMap;
 
+    private String dimension;
+
     private ConcurrentHashMap<Long, GameObject> gameObjects = new ConcurrentHashMap<>(8);
 
     /**
@@ -38,16 +40,21 @@ public class World implements MongoSerialisable {
      */
     private int updatable = 0;
 
-    public World(int x, int y, TileMap tileMap) {
+    public World(int x, int y, TileMap tileMap, String dimension) {
         this.x = x;
         this.y = y;
         this.tileMap = tileMap;
+        this.dimension = dimension;
 
         this.worldSize = tileMap.getWidth();
     }
 
     private World(int worldSize) {
         this.worldSize = worldSize;
+    }
+
+    public String getDimension() {
+        return dimension;
     }
 
     public TileMap getTileMap() {
@@ -59,7 +66,10 @@ public class World implements MongoSerialisable {
      */
     public boolean isTileBlocked(int x, int y) {
 
-        return getGameObjectsBlockingAt(x, y).size() > 0 || tileMap.getTileAt(x, y) == TileMap.WALL_TILE;
+        int tile = tileMap.getTileAt(x, y);
+
+        return getGameObjectsBlockingAt(x, y).size() > 0 || tile == TileMap.WALL_TILE ||
+                tile == TileMap.VAULT_WALL || tile == TileMap.VOID;
     }
 
     /**
@@ -70,9 +80,8 @@ public class World implements MongoSerialisable {
      *
      * @return long
      */
-    public static String idFromCoordinates(int x, int y){
-        return "w-"+"0x"+Integer.toHexString(x)+"-"+"0x"+Integer.toHexString(y);
-        //return ((long)x)*(((long)maxWidth)+1)+((long)y);
+    public static String idFromCoordinates(int x, int y, String dimension) {
+        return dimension + "0x" + Integer.toHexString(x) + "-" + "0x" + Integer.toHexString(y);
     }
 
     /**
@@ -81,7 +90,7 @@ public class World implements MongoSerialisable {
      * @return long
      */
     public String getId(){
-        return World.idFromCoordinates(x,y);
+        return World.idFromCoordinates(x, y, dimension);
     }
 
     public int getX() {
@@ -148,9 +157,13 @@ public class World implements MongoSerialisable {
         for (GameObject object : gameObjects.values()) {
             //Clean up dead objects
             if (object.isDead()) {
-                object.onDeadCallback();
-                removeObject(object);
-                //LogManager.LOGGER.fine("Removed object " + object + " id: " + object.getObjectId());
+                if (!object.onDeadCallback()) {
+                    removeObject(object);
+                    //LogManager.LOGGER.fine("Removed object " + object + " id: " + object.getObjectId());
+                } else if (object instanceof Updatable) {
+                    ((Updatable) object).update();
+                }
+
             } else if (object instanceof Updatable) {
                 ((Updatable) object).update();
             }
@@ -169,6 +182,7 @@ public class World implements MongoSerialisable {
 
 
         dbObject.put("_id", getId());
+        dbObject.put("dimension", getDimension());
 
         dbObject.put("objects", objects);
         dbObject.put("terrain", tileMap.mongoSerialise());
@@ -205,6 +219,7 @@ public class World implements MongoSerialisable {
         World world = new World((int) dbObject.get("size"));
         world.x = (int) dbObject.get("x");
         world.y = (int) dbObject.get("y");
+        world.dimension = (String) dbObject.get("dimension");
         world.updatable = (int) dbObject.get("updatable");
 
         world.tileMap = TileMap.deserialize((BasicDBObject) dbObject.get("terrain"), world.getWorldSize());
@@ -217,6 +232,8 @@ public class World implements MongoSerialisable {
 
             object.setWorld(world);
             world.addObject(object);
+
+            object.initialize();
         }
 
         return world;
@@ -241,7 +258,7 @@ public class World implements MongoSerialisable {
                 if (tiles[x][y] == TileMap.PLAIN_TILE) {
                     mapInfo[x][y] = 0;
 
-                } else if (tiles[x][y] == TileMap.WALL_TILE) {
+                } else if (tiles[x][y] == TileMap.WALL_TILE || tiles[x][y] == TileMap.VAULT_WALL) {
                     mapInfo[x][y] = INFO_BLOCKED;
 
                 } else if (tiles[x][y] == TileMap.COPPER_TILE) {
@@ -365,7 +382,7 @@ public class World implements MongoSerialisable {
         this.universe = universe;
     }
 
-    public ArrayList<World> getNeighbouringLoadedWorlds(){
+    private ArrayList<World> getNeighbouringLoadedWorlds() {
         ArrayList<World> neighbouringWorlds = new ArrayList<>();
 
         if (universe == null){
@@ -373,13 +390,13 @@ public class World implements MongoSerialisable {
         }
 
         for (int dx=-1; dx<=+1; dx+=2){
-            World nw = universe.getLoadedWorld(x+dx,y);
+            World nw = universe.getLoadedWorld(x + dx, y, dimension);
             if (nw != null){
                 neighbouringWorlds.add(nw);
             }
         }
         for (int dy=-1; dy<=+1; dy+=2){
-            World nw = universe.getLoadedWorld(x,y+dy);
+            World nw = universe.getLoadedWorld(x, y + dy, dimension);
             if (nw != null){
                 neighbouringWorlds.add(nw);
             }
@@ -388,28 +405,29 @@ public class World implements MongoSerialisable {
         return neighbouringWorlds;
     }
 
-    public ArrayList<World> getNeighbouringExistingWorlds(){
-        ArrayList<World> neighbouringWorlds = new ArrayList<>();
-
-        if (universe == null){
-            return neighbouringWorlds;
-        }
-
-        for (int dx=-1; dx<=+1; dx+=2){
-            World nw = universe.getWorld(x+dx,y,false);
-            if (nw != null){
-                neighbouringWorlds.add(nw);
-            }
-        }
-        for (int dy=-1; dy<=+1; dy+=2){
-            World nw = universe.getWorld(x,y+dy,false);
-            if (nw != null){
-                neighbouringWorlds.add(nw);
-            }
-        }
-
-        return neighbouringWorlds;
-    }
+    //Unused
+//    public ArrayList<World> getNeighbouringExistingWorlds(){
+//        ArrayList<World> neighbouringWorlds = new ArrayList<>();
+//
+//        if (universe == null){
+//            return neighbouringWorlds;
+//        }
+//
+//        for (int dx=-1; dx<=+1; dx+=2){
+//            World nw = universe.getWorld(x+dx,y,false);
+//            if (nw != null){
+//                neighbouringWorlds.add(nw);
+//            }
+//        }
+//        for (int dy=-1; dy<=+1; dy+=2){
+//            World nw = universe.getWorld(x,y+dy,false);
+//            if (nw != null){
+//                neighbouringWorlds.add(nw);
+//            }
+//        }
+//
+//        return neighbouringWorlds;
+//    }
 
 
     public boolean canUnload(){
@@ -426,7 +444,80 @@ public class World implements MongoSerialisable {
         return res;
     }
 
+    public Point getAdjacentTile(int x, int y) {
+
+        if (!isTileBlocked(x + 1, y)) {
+            return new Point(x + 1, y);
+
+        } else if (!isTileBlocked(x, y + 1)) {
+            return new Point(x, getY() + 1);
+
+        } else if (!isTileBlocked(x - 1, y)) {
+            return new Point(x - 1, getY());
+
+        } else if (!isTileBlocked(x, y - 1)) {
+            return new Point(x, y - 1);
+        } else {
+            return null;
+        }
+    }
+
     public Collection<GameObject> getGameObjects() {
         return gameObjects.values();
+    }
+
+
+    /**
+     * Get a random tile with N adjacent non-blocked tile
+     *
+     * @param n Number of adjacent tiles of type X
+     * @return null if no tile is found
+     */
+    public Point getRandomTileWithAdjacent(int n, int tile) {
+        int counter = 0;
+        while (true) {
+            counter++;
+
+            //Prevent infinite loop
+            if (counter >= 2500) {
+                return null;
+            }
+
+            Point rTile = getTileMap().getRandomTile(tile);
+
+            if (rTile != null) {
+                int adjacentTiles = 0;
+
+                if (!isTileBlocked(rTile.x, rTile.y - 1)) {
+                    adjacentTiles++;
+                }
+                if (!isTileBlocked(rTile.x + 1, rTile.y)) {
+                    adjacentTiles++;
+                }
+                if (!isTileBlocked(rTile.x, rTile.y + 1)) {
+                    adjacentTiles++;
+                }
+                if (!isTileBlocked(rTile.x - 1, rTile.y)) {
+                    adjacentTiles++;
+                }
+                if (!isTileBlocked(rTile.x + 1, rTile.y + 1)) {
+                    adjacentTiles++;
+                }
+                if (!isTileBlocked(rTile.x - 1, rTile.y + 1)) {
+                    adjacentTiles++;
+                }
+                if (!isTileBlocked(rTile.x + 1, rTile.y - 1)) {
+                    adjacentTiles++;
+                }
+                if (!isTileBlocked(rTile.x - 1, rTile.y - 1)) {
+                    adjacentTiles++;
+                }
+
+                if (adjacentTiles >= n) {
+                    return rTile;
+                }
+            }
+        }
+
     }
 }

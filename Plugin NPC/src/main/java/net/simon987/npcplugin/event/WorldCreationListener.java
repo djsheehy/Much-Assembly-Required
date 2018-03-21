@@ -100,13 +100,9 @@ public class WorldCreationListener implements GameEventListener {
             if (p != null) {
 
                 VaultDoor vaultDoor = new VaultDoor(0); //todo cypherId ?
-
                 vaultDoor.setWorld(world);
-                vaultDoor.setObjectId(GameServer.INSTANCE.getGameUniverse().getNextObjectId());
-                vaultDoor.setX(p.x);
-                vaultDoor.setY(p.y);
 
-                int counter = 300;
+                int counter = 700;
                 while (p.x == 0 || p.x == world.getWorldSize() - 1 || p.y == world.getWorldSize() - 1 || p.y == 0
                         || vaultDoor.getAdjacentTileCount(true) < 8) {
                     p = world.getRandomPassableTile();
@@ -127,8 +123,12 @@ public class WorldCreationListener implements GameEventListener {
                     }
                 }
 
+                vaultDoor.setObjectId(GameServer.INSTANCE.getGameUniverse().getNextObjectId());
                 world.addObject(vaultDoor);
                 world.incUpdatable(); //In case the Factory & Radio Tower couldn't be spawned.
+                vaultDoor.setWorld(world);
+
+                vaultDoor.initialize();
 
                 LogManager.LOGGER.info("Spawned Vault Door at (" + world.getX() + ", " + world.getY() +
                         ") (" + p.x + ", " + p.y + ")");

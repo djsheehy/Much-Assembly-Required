@@ -44,31 +44,32 @@ public class WorldUpdateListener implements GameEventListener {
 
         World world = ((WorldUpdateEvent) event).getWorld();
 
-        //If there is less than the respawn threshold,
-        if (world.findObjects(BiomassBlob.class).size() < blobThreshold) {
+        if (world.getDimension().startsWith("w")) {
+            //If there is less than the respawn threshold,
+            if (world.findObjects(BiomassBlob.class).size() < blobThreshold) {
 
-            //Set a timer for respawn_time ticks
-            if (!worldWaitMap.containsKey(world) || worldWaitMap.get(world) == 0L) {
-                worldWaitMap.put(world, GameServer.INSTANCE.getGameUniverse().getTime() + waitTime);
-            } else {
+                //Set a timer for respawn_time ticks
+                if (!worldWaitMap.containsKey(world) || worldWaitMap.get(world) == 0L) {
+                    worldWaitMap.put(world, GameServer.INSTANCE.getGameUniverse().getTime() + waitTime);
+                } else {
 
-                long waitUntil = worldWaitMap.get(world);
+                    long waitUntil = worldWaitMap.get(world);
 
-                if (GameServer.INSTANCE.getGameUniverse().getTime() >= waitUntil) {
+                    if (GameServer.INSTANCE.getGameUniverse().getTime() >= waitUntil) {
 
-                    //If the timer was set less than respawn_time ticks ago, respawn the blobs
-                    ArrayList<BiomassBlob> newBlobs = WorldUtils.generateBlobs(world, minBlobCount,
-                            maxBlobCount, blobYield);
-                    for (BiomassBlob blob : newBlobs) {
-                        world.addObject(blob);
+                        //If the timer was set less than respawn_time ticks ago, respawn the blobs
+                        ArrayList<BiomassBlob> newBlobs = WorldUtils.generateBlobs(world, minBlobCount,
+                                maxBlobCount, blobYield);
+                        for (BiomassBlob blob : newBlobs) {
+                            world.addObject(blob);
+                            world.incUpdatable();
+                        }
+
+                        //Set the 'waitUntil' time to 0 to indicate that we are not waiting
+                        worldWaitMap.replace(world, 0L);
                     }
-
-                    //Set the 'waitUntil' time to 0 to indicate that we are not waiting
-                    worldWaitMap.replace(world, 0L);
                 }
             }
-
         }
-
     }
 }

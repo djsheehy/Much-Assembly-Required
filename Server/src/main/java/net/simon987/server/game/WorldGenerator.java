@@ -87,7 +87,7 @@ public class WorldGenerator {
      */
     private static World generateEmptyWorld(int locX, int locY) {
 
-        return new World(locX, locY, new TileMap(DEFAULT_WORLD_SIZE, DEFAULT_WORLD_SIZE));
+        return new World(locX, locY, new TileMap(DEFAULT_WORLD_SIZE, DEFAULT_WORLD_SIZE), "w-");
     }
 
     /**
@@ -169,7 +169,7 @@ public class WorldGenerator {
 
         for (int i = 0; i < ironCount; i++) {
 
-            Point p = world.getTileMap().getRandomPlainTile();
+            Point p = world.getTileMap().getRandomTile(TileMap.PLAIN_TILE);
 
             if (p != null) {
                 world.getTileMap().getTiles()[p.x][p.y] = TileMap.IRON_TILE;
@@ -177,7 +177,7 @@ public class WorldGenerator {
         }
         for (int i = 0; i < copperCount; i++) {
 
-            Point p = world.getTileMap().getRandomPlainTile();
+            Point p = world.getTileMap().getRandomTile(TileMap.PLAIN_TILE);
 
             if (p != null) {
                 world.getTileMap().getTiles()[p.x][p.y] = TileMap.COPPER_TILE;

@@ -21,10 +21,13 @@ import java.util.zip.DeflaterOutputStream;
  */
 public class TileMap implements JSONSerialisable, MongoSerialisable {
 
+    public static final int VOID = -1;
     public static final int PLAIN_TILE = 0;
     public static final int WALL_TILE = 1;
     public static final int IRON_TILE = 2;
     public static final int COPPER_TILE = 3;
+    public static final int VAULT_FLOOR = 4;
+    public static final int VAULT_WALL = 5;
 
     public static final int ITEM_IRON = 3;
     public static final int ITEM_COPPER = 4;
@@ -164,7 +167,7 @@ public class TileMap implements JSONSerialisable, MongoSerialisable {
 
     }
 
-    public Point getRandomPlainTile() {
+    public Point getRandomTile(int tile) {
 
         Random random = new Random();
 
@@ -180,10 +183,9 @@ public class TileMap implements JSONSerialisable, MongoSerialisable {
             int rx = random.nextInt(width);
             int ry = random.nextInt(height);
 
-            if (tiles[rx][ry] == TileMap.PLAIN_TILE) {
+            if (tiles[rx][ry] == tile) {
                 return new Point(rx, ry);
             }
         }
-
     }
 }

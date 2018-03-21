@@ -3,19 +3,21 @@ package net.simon987.cubotplugin;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import net.simon987.server.GameServer;
+import net.simon987.server.ServerConfiguration;
 import net.simon987.server.assembly.Memory;
 import net.simon987.server.game.*;
+import net.simon987.server.logging.LogManager;
 import net.simon987.server.user.User;
 import org.json.simple.JSONObject;
 
+import java.awt.*;
 import java.util.ArrayList;
+import java.util.Random;
 
-public class Cubot extends GameObject implements Updatable, ControllableUnit, Programmable {
+public class Cubot extends GameObject implements Updatable, ControllableUnit, Programmable, Attackable, Rechargeable {
 
     private static final char MAP_INFO = 0x0080;
     public static final int ID = 1;
-
-    public static int TYPE_ID = 2;
 
     private int hologram = 0;
     private String hologramString = "";
@@ -27,10 +29,16 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Pr
      * Hit points
      */
     private int hp;
+    private int maxHp;
+    private int shield;
+    private int maxShield;
     private int heldItem;
 
     private Action currentAction = Action.IDLE;
     private Action lastAction = Action.IDLE;
+
+    private char currentStatus;
+    private char lastStatus;
 
     private ArrayList<Integer> keyboardBuffer = new ArrayList<>();
 
@@ -90,6 +98,10 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Pr
 
         lastConsoleMessagesBuffer = new ArrayList<>(consoleMessagesBuffer);
         consoleMessagesBuffer.clear();
+
+        //And the status..
+        lastStatus = currentStatus;
+        currentStatus = 0;
     }
 
     @Override
@@ -102,6 +114,7 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Pr
         json.put("direction", getDirection().ordinal());
         json.put("heldItem", heldItem);
         json.put("hp", hp);
+        json.put("shield", shield);
         json.put("action", lastAction.ordinal());
         json.put("holo", hologram);
         json.put("holoStr", hologramString);
@@ -127,6 +140,7 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Pr
         dbObject.put("direction", getDirection().ordinal());
         dbObject.put("heldItem", heldItem);
         dbObject.put("hp", hp);
+        dbObject.put("shield", shield);
         dbObject.put("action", lastAction.ordinal());
         dbObject.put("holo", hologram);
         dbObject.put("holoStr", hologramString);
@@ -148,10 +162,15 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Pr
         cubot.setX((int) obj.get("x"));
         cubot.setY((int) obj.get("y"));
         cubot.hp = (int) obj.get("hp");
+        cubot.shield = (int) obj.get("shield");
         cubot.setDirection(Direction.getDirection((int) obj.get("direction")));
         cubot.heldItem = (int) obj.get("heldItem");
         cubot.energy = (int) obj.get("energy");
-        cubot.maxEnergy = GameServer.INSTANCE.getConfig().getInt("battery_max_energy");
+
+        ServerConfiguration config = GameServer.INSTANCE.getConfig();
+        cubot.maxEnergy = config.getInt("battery_max_energy");
+        cubot.maxHp = config.getInt("cubot_max_hp");
+        cubot.maxShield = config.getInt("cubot_max_shield");
 
         return cubot;
 
@@ -216,20 +235,19 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Pr
         this.energy = energy;
     }
 
-    public boolean spendEnergy(int spent) {
+    public boolean spendEnergy(int amount) {
 
-        if (energy - spent < 0) {
+        if (energy - amount < 0) {
             return false;
         } else {
-            energy -= spent;
+            energy -= amount;
             return true;
         }
     }
 
-    public void storeEnergy(int qty) {
+    public void storeEnergy(int amount) {
 
-        energy = Math.min(energy + qty, maxEnergy);
-
+        energy = Math.min(energy + amount, maxEnergy);
     }
 
     public void setMaxEnergy(int maxEnergy) {
@@ -238,6 +256,41 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Pr
 
     public int getMaxEnergy() {
         return maxEnergy;
+    }
+
+    public int getShield() {
+        return shield;
+    }
+
+    public void setShield(int shield) {
+        this.shield = shield;
+    }
+
+    public boolean chargeShield(int amount) {
+        amount = Math.min(amount, maxShield - shield);
+
+        int energySpent = amount * CubotShield.COST;
+        if(spendEnergy(energySpent)) {
+            shield += amount;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * Damages shield by amount.
+     * 
+     * Return damage that broke through the shield.
+     */
+    public int damageShield(int amount) {
+        int after = shield - amount;
+        if(after < 0) {
+            shield = 0;
+            return -after;
+        }
+        shield = after;
+        return 0;
     }
 
     @Override
@@ -304,5 +357,118 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Pr
 
     public void setHologramColor(int hologramColor) {
         this.hologramColor = hologramColor;
+    }
+
+    public void addStatus(CubotStatus status) {
+
+        currentStatus |= status.val;
+    }
+
+    public void removeStatus(CubotStatus status) {
+
+        currentStatus &= (~status.val);
+    }
+
+    public char getStatus() {
+        return lastStatus;
+    }
+
+    @Override
+    public void setHealRate(int hp) {
+        //no op
+    }
+
+    @Override
+    public int getHp() {
+        return hp;
+    }
+
+    @Override
+    public void setHp(int hp) {
+        this.hp = hp;
+    }
+
+    @Override
+    public int getMaxHp() {
+        return maxHp;
+    }
+
+    @Override
+    public void setMaxHp(int hp) {
+        this.maxHp = hp;
+    }
+
+    @Override
+    public void heal(int amount) {
+        hp += amount;
+
+        //Can't heal above max
+        if (hp > maxHp) {
+            hp = maxHp;
+        }
+    }
+
+    @Override
+    public void damage(int amount) {
+
+        //Damage shield first
+        int hullDamage = damageShield(amount);
+
+        hp -= hullDamage;
+
+        if (hp <= 0) {
+            setDead(true);
+        }
+    }
+
+    public void reset() {
+        setDead(false);
+        setHp(maxHp);
+        setShield(0);
+        setHeldItem(0);
+        setEnergy(maxEnergy);
+        clearKeyboardBuffer();
+        consoleMessagesBuffer.clear();
+        lastConsoleMessagesBuffer.clear();
+        hologramColor = 0;
+        currentStatus = 0;
+        lastStatus = 0;
+        addStatus(CubotStatus.FACTORY_NEW);
+    }
+
+    @Override
+    public boolean onDeadCallback() {
+        LogManager.LOGGER.info(getParent().getUsername() + "'s Cubot died");
+
+        reset();
+
+        //Teleport to spawn point
+        this.getWorld().removeObject(this);
+        this.getWorld().decUpdatable();
+
+        ServerConfiguration config = GameServer.INSTANCE.getConfig();
+        Random random = new Random();
+
+        int spawnX = config.getInt("new_user_worldX") + random.nextInt(5);
+        int spawnY = config.getInt("new_user_worldY") + random.nextInt(5);
+        String dimension = config.getString("new_user_dimension");
+        this.setWorld(GameServer.INSTANCE.getGameUniverse().getWorld(spawnX, spawnY, true, dimension));
+
+        Point point = this.getWorld().getRandomPassableTile();
+        this.setX(point.x);
+        this.setY(point.y);
+
+        this.getWorld().addObject(this);
+        this.getWorld().incUpdatable();
+
+        return true;
+    }
+
+    public int getMaxShield() {
+        return maxShield;
+    }
+
+    public void setMaxShield(int maxShield) {
+        this.maxShield = maxShield;
     }
 }
